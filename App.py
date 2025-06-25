@@ -11,38 +11,57 @@ import os
 model = joblib.load('trained_model.joblib')
 _, _, label_encoder = joblib.load('audio_features_augmented.pkl')
 
-# --- Feature extraction function ---
+# --- Enhanced Feature Extraction Function ---
 def extract_features(audio, sr):
     audio = audio / np.max(np.abs(audio))
     if sr != 16000:
         audio = librosa.resample(audio, orig_sr=sr, target_sr=16000)
         sr = 16000
 
+    # MFCCs
     mfcc = librosa.feature.mfcc(y=audio, sr=sr, n_mfcc=13)
     mfcc_mean = np.mean(mfcc, axis=1)
 
+    # ZCR
     zcr = librosa.feature.zero_crossing_rate(audio)
     zcr_mean = np.mean(zcr)
 
+    # Spectral Centroid
     spec_centroid = librosa.feature.spectral_centroid(y=audio, sr=sr)
     spec_centroid_mean = np.mean(spec_centroid)
 
+    # Spectral Flatness (proxy for entropy)
     spec_flatness = librosa.feature.spectral_flatness(y=audio)
     spec_flatness_mean = np.mean(spec_flatness)
 
+    # Spectral Rolloff
     rolloff = librosa.feature.spectral_rolloff(y=audio, sr=sr)
     rolloff_mean = np.mean(rolloff)
 
+    # RMS
     rms = librosa.feature.rms(y=audio)
     rms_mean = np.mean(rms)
 
+    # Reverb Decay Time (approximated)
+    energy = rms[0]
+    peak_idx = np.argmax(energy)
+    peak_energy = energy[peak_idx]
+    decay_threshold = peak_energy * 0.1
+    decay_time = 0.0
+    for i in range(peak_idx + 1, len(energy)):
+        if energy[i] < decay_threshold:
+            decay_time = (i - peak_idx) * (512 / sr)  # hop_length = 512
+            break
+
+    # Combine all features
     feature_vector = np.hstack([
         mfcc_mean,
         zcr_mean,
         spec_centroid_mean,
         spec_flatness_mean,
         rolloff_mean,
-        rms_mean
+        rms_mean,
+        decay_time
     ])
     return feature_vector.reshape(1, -1)
 
@@ -64,10 +83,9 @@ if uploaded_file is not None:
             audio = AudioSegment.from_file(uploaded_file)
             audio.export(file_path, format="wav")
         else:
-            # Write WAV directly
             tmpfile.write(uploaded_file.read())
 
-    # Load and preprocess
+    # Load and extract features
     x, sr = librosa.load(file_path, sr=None)
     features = extract_features(x, sr)
 
@@ -76,16 +94,14 @@ if uploaded_file is not None:
     pred_index = np.argmax(pred_proba)
     predicted_class = label_encoder.inverse_transform([pred_index])[0]
 
-    # Show prediction
+    # Display result
     st.markdown(f"### 🟩 Predicted Class: `{predicted_class}`")
 
-    # Show confidence
     st.subheader("📊 Confidence Scores:")
     for i, class_name in enumerate(label_encoder.classes_):
         st.write(f"- **{class_name}**: {pred_proba[i]*100:.2f}%")
 
-    # Optional: Bar chart
     st.bar_chart({label: pred_proba[i] for i, label in enumerate(label_encoder.classes_)})
 
-    # Cleanup temp file
+    # Cleanup
     os.remove(file_path)
