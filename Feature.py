@@ -34,23 +34,33 @@ for label in classes:
             y, sr = librosa.load(filepath, sr=16000, mono=True)
             y = y / np.max(np.abs(y))  # Normalize amplitude
 
-            # MFCCs (13)
+            # --- Core Features ---
             mfccs = librosa.feature.mfcc(y=y, sr=sr, n_mfcc=13)
             mfccs_mean = np.mean(mfccs, axis=1)
 
-            # Other Features
+            # Delta & Delta-Delta MFCCs
+            mfcc_delta = np.mean(librosa.feature.delta(mfccs), axis=1)
+            mfcc_delta2 = np.mean(librosa.feature.delta(mfccs, order=2), axis=1)
+
             zcr = np.mean(librosa.feature.zero_crossing_rate(y))
             spec_centroid = np.mean(librosa.feature.spectral_centroid(y=y, sr=sr))
             spec_flatness = np.mean(librosa.feature.spectral_flatness(y=y))
             rolloff = np.mean(librosa.feature.spectral_rolloff(y=y, sr=sr))
             rms = np.mean(librosa.feature.rms(y=y))
+            bandwidth = np.mean(librosa.feature.spectral_bandwidth(y=y, sr=sr))
+            contrast = np.mean(librosa.feature.spectral_contrast(y=y, sr=sr))
+            chroma = np.mean(librosa.feature.chroma_stft(y=y, sr=sr), axis=1)
             decay = compute_reverb_decay(y, sr)
 
-            # Combine 19 features
+            # --- Combine all features ---
             feature_vector = np.concatenate([
                 mfccs_mean,
-                [zcr, spec_centroid, spec_flatness, rolloff, rms, decay]
+                mfcc_delta,
+                mfcc_delta2,
+                [zcr, spec_centroid, spec_flatness, rolloff, rms, bandwidth, contrast, decay],
+                chroma
             ])
+
             features.append(feature_vector)
             labels.append(label)
 
