@@ -19,9 +19,13 @@ def extract_features(audio, sr):
         audio = librosa.resample(audio, orig_sr=sr, target_sr=16000)
         sr = 16000
 
-    # MFCCs
-    mfcc = librosa.feature.mfcc(y=audio, sr=sr, n_mfcc=13)
-    mfcc_mean = np.mean(mfcc, axis=1)
+    # --- MFCCs ---
+    mfccs = librosa.feature.mfcc(y=audio, sr=sr, n_mfcc=13)
+    mfccs_mean = np.mean(mfccs, axis=1)
+
+    # Delta & Delta-Delta
+    mfcc_delta = np.mean(librosa.feature.delta(mfccs), axis=1)
+    mfcc_delta2 = np.mean(librosa.feature.delta(mfccs, order=2), axis=1)
 
     # ZCR
     zcr = np.mean(librosa.feature.zero_crossing_rate(audio))
@@ -38,16 +42,37 @@ def extract_features(audio, sr):
     # RMS
     rms = np.mean(librosa.feature.rms(y=audio))
 
-    # Reverb Decay Time (approximated)
-    energy = librosa.feature.rms(y=audio)[0]
-    decay = np.polyfit(np.arange(len(energy)), 20 * np.log10(energy + 1e-10), deg=1)[0]
+    # Bandwidth
+    bandwidth = np.mean(librosa.feature.spectral_bandwidth(y=audio, sr=sr))
 
-    # Combine all 19 features
-    feature_vector = np.hstack([
-        mfcc_mean,
-        [zcr, spec_centroid, spec_flatness, rolloff, rms, decay]
+    # Spectral Contrast
+    contrast = np.mean(librosa.feature.spectral_contrast(y=audio, sr=sr))
+
+    # Chroma
+    chroma = np.mean(librosa.feature.chroma_stft(y=audio, sr=sr), axis=1)
+
+    # Reverb Decay
+    energy = librosa.feature.rms(y=audio)[0]
+    peak_idx = np.argmax(energy)
+    peak_energy = energy[peak_idx]
+    decay_threshold = peak_energy * 0.1
+    decay_time = 0.0
+    for i in range(peak_idx + 1, len(energy)):
+        if energy[i] < decay_threshold:
+            decay_time = (i - peak_idx) * (512 / sr)
+            break
+
+    # --- Combine all 59 features ---
+    feature_vector = np.concatenate([
+        mfccs_mean,
+        mfcc_delta,
+        mfcc_delta2,
+        [zcr, spec_centroid, spec_flatness, rolloff, rms, bandwidth, contrast, decay_time],
+        chroma
     ])
+
     return feature_vector.reshape(1, -1)
+
 
 # --- Streamlit UI ---
 st.set_page_config(page_title="Audio Analyzer", layout="centered")
